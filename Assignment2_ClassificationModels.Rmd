@@ -7,102 +7,211 @@ output: html_document
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(readr)
+library(caret)
+library(rattle)
+library(pROC)
+library(naniar)
+library(ggplot2)
+```
 
+```{r Read in data}
+df <- read_csv('2014_NBA_shot-data.csv')
+```
+
+```{r View Data}
+glimpse(df)
+```
+
+```{r Na exploration}
+sum(is.na(df))
+gg_miss_var(df)
+vars_with_NA <- miss_var_which(df)
+
+df %>% 
+  select(c(vars_with_NA, period)) %>% 
+  gg_miss_fct(fct = period) 
+
+NA_obs <- df %>% 
+  filter(is.na(shot_clock)) 
+
+ggplot(NA_obs,aes(minutes_remaining)) + 
+  geom_boxplot() 
+ggplot(NA_obs,aes(seconds_remaining)) + 
+  geom_boxplot()
+
+df$shot_clock <- if_else(is.na(df$shot_clock) & df$seconds_remaining < 24 & df$minutes_remaining == 0, df$seconds_remaining, df$shot_clock)
+
+
+NA_obs <- df %>% 
+  filter(is.na(shot_clock)) 
+
+ggplot(NA_obs,aes(minutes_remaining)) + 
+  geom_boxplot() 
+ggplot(NA_obs,aes(seconds_remaining)) + 
+  geom_boxplot()
+
+SC_mean_byGame <- df %>% 
+  group_by(period) %>% 
+  summarise(clock = if_else(is.na(shot_clock), mean(shot_clock, na.rm = T), shot_clock))
+
+SC_mean <- if_else(is.na(df$shot_clock), mean(df$shot_clock, na.rm = T), df$shot_clock)
+
+NA_check <- cbind(df$shot_clock, SC_mean_byGame$clock, SC_mean)
+
+na_mean_check <- which(is.na(df$shot_clock))
+NA_check[na_mean_check,]
+
+clock <- round(SC_mean_byGame$clock, digits = 2)
+df$shot_clock <- clock2
+
+sum(is.na(df))
+
+rm(NA_check,NA_obs, SC_mean, SC_mean_byGame, clock, na_mean_check, vars_with_NA)
+```
+
+```{r split data}
+set.seed(100)
+
+inTrain <- createDataPartition(y = df$shot_result, p = 0.7, list = F)
+training <-  df %>% 
+  slice(inTrain)
+
+testing <-  df %>% 
+  slice(-inTrain)
+
+dim(training)
+dim(testing)
+
+rm(inTrain)
+```
+
+```{r EDA of y}
+df %>%  
+  count(shot_result) %>% 
+  mutate(prop = prop.table(n)) %>% 
+  ggplot(aes(shot_result, prop, fill = shot_result)) +
+  geom_bar(stat  = 'identity', position = 'dodge') +
+  theme(legend.position = "none") %>% 
+  scale_y_continuous(seq(from = 0, to = 0.7, by = .05))
+```
+
+```{r Scatterplot}
+## a function to create scatterplots
+gg_scatter <-  function(feature) {
+  ggplot(training, aes(x = .data[[feature]], y = shot_result)) +
+    geom_point(colour = 'violet', alpha = 0.5) +
+    geom_smooth(method = 'lm', colour = "blue" ) +
+    geom_smooth(colour = 'purple') 
+}
+
+## establish an object that contains the variables that are either numerical or have more than 20 unique characters
+numeric_vars <- training %>% 
+  select(where(is.numeric), where(~length(unique(.x)) > 20),- shot_result) %>% 
+  names(.)  
+
+## for loop to create all the scatterplots
+for (i in seq_along(numeric_vars)) {
+  print(gg_scatter(numeric_vars[i]))
+}
 
 ```
 
-```{r}
+```{r Boxplot}
+## a function to create boxplots
+
+gg_boxplot <- function(feature){
+  ggplot(data = training, aes(x = reorder(.data[[feature]], shot_result, median),
+                              y = shot_result,
+                              fill = reorder(.data[[feature]], shot_result, median))) +
+    geom_boxplot() +
+    xlab(paste(feature)) +
+    theme(legend.position = "none", 
+          axis.text.x = element_text(angle = 45))
+}
+## establish an object that contains the variables that are either catergorical or have less than 20 unique characters
+character_vars <- training %>% 
+  select(where(is_character), where(~length(unique(.x)) <= 20),- shot_result) %>% 
+  names(.)  
+
+## for loop to create all the boxplots
+for (i in seq_along(character_vars)) {
+  print(gg_boxplot(character_vars[i]))
+}
+
+```
+
+```{r NZV}
+```
+
+```{r multicolinearity}
+```
+--------------------------------------------------------------------------------------------------------------------------------------
+```{r Cross validation}
+```
+
+```{r Logistic Regression}
+```
+
+```{r Probabilities}
+```
+
+```{r Confusion Matrix}
+```
+
+```{r probability distribution}
+ggplot(data = NULL, aes(probabilties$pass, ..count..)) +
+  geom_histogram(aes(fill = training$play_type))
+```
+
+```{r ROC Curve}
+```
+
+```{r Decsion tree}
+```
+
+```{r Confusion matrix}
+confusionMatrix(data = predictions_tree,
+                reference = testing$complete_pass,
+                positive = "complete")
+
+```
+
+```{r ROC Curve}
+```
+
+```{r random forest}
+```
+
+```{r Confusion matrix}
+confusionMatrix(data = predictions_tree,
+                reference = testing$complete_pass,
+                positive = "complete")
+
+```
+
+```{r ROC Curve}
+```
+
+```{r in sample performance}
+resamps <- resamples(list(tree = tree_mdl,
+                          rf = rf_mdl,
+                          logreg = logreg_mdl))
+
+bwplot(resamps)
+summary(resamps)
+
+```
+
+```{r Apply to test}
 ```
 
 
-```{r}
+```{r Confusion Matrix}
 ```
 
 
-```{r}
-```
-
-
-```{r}
-```
-
-
-```{r}
-```
-
-
-```{r}
-```
-
-
-```{r}
-```
-
-
-```{r}
-```
-
-
-```{r}
-```
-
-
-```{r}
-```
-
-
-```{r}
-```
-
-
-```{r}
-```
-
-
-```{r}
-```
-
-
-```{r}
-```
-
-
-```{r}
-```
-
-
-```{r}
-```
-
-
-```{r}
-```
-
-
-```{r}
-```
-
-
-```{r}
-```
-
-
-```{r}
-```
-
-
-```{r}
-```
-
-
-```{r}
-```
-
-
-```{r}
-```
-
-
-```{r}
+```{r ROC Curve}
 ```
 
