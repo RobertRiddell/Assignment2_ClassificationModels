@@ -14,6 +14,7 @@ library(rattle)
 library(pROC)
 library(naniar)
 library(ggplot2)
+library(stringr)
 ```
 
 ```{r Read in data}
@@ -22,53 +23,88 @@ df <- read_csv('2014_NBA_shot-data.csv')
 
 ```{r View Data}
 glimpse(df)
+
+# Add a variable to the whole data frame, as these variables are only ever calculated based off the individual obeservation they should not affect
+## the out of sample data
+df <- df %>% 
+  mutate(last_5 = if_else(period == 4 & minutes_remaining < 5, 1,0)) 
+df <- df %>% 
+  mutate(Overtime = if_else(period == 5 | period == 6 | period == 7, 1, 0)) 
+df$shot_clock_simple <- cut_interval(df$shot_clock,n = 6)
+df$close_def_dist_simple <- cut_interval(df$close_def_dist,n = 10)
+
+
+# through some later exploration I found these observations that gave 4 or 6 points. I thought the 4 points could be getting fouled on a three point
+## attempt but after checking box scores that did not seem to be the case. 
+# I am not sure if these are errors in the dataset or there is some explanation I can't find. As they relate to only two players I am inclined to 
+## think it is an error in the data
+df %>% 
+  select(pts,pts_type) %>% 
+  mutate(diff = pts_type - pts) %>% 
+  filter(diff < 0)
+df %>% 
+  filter(pts== 4 | pts ==6)
+
+Matchup <- data.frame(str_split_fixed(df$matchup," ", n =7)) %>% 
+  select(X1,X3,X7) %>% 
+  rename('Month' = X1,
+         'Year' = X3,
+         'Opposition' = X7)
+df <- cbind(df,Matchup)
+
+df <- df %>% 
+  select(-c(closest_defender,
+         player_name,
+         case_no,
+         game_event_id,
+         matchup))
+
+# scatterplot: game_id, 
+# boxplot: team ID and prob
+
+?data.frame
+
 ```
 
 ```{r Na exploration}
+# this shows that all the missing values relate to the variable shot_clock
 sum(is.na(df))
 gg_miss_var(df)
 vars_with_NA <- miss_var_which(df)
 
+# the majority of these NA values seem to appear when theer is less than 24 seconds left in the period.
+# due to think I belive they are due to the shot clock being "turned off" so have replaced the NA value with the seconds remaning value.
 df %>% 
-  select(c(vars_with_NA, period)) %>% 
-  gg_miss_fct(fct = period) 
-
+  select(c(vars_with_NA, seconds_remaining)) %>% 
+  gg_miss_fct(fct = seconds_remaining) 
 NA_obs <- df %>% 
   filter(is.na(shot_clock)) 
-
 ggplot(NA_obs,aes(minutes_remaining)) + 
   geom_boxplot() 
 ggplot(NA_obs,aes(seconds_remaining)) + 
   geom_boxplot()
-
 df$shot_clock <- if_else(is.na(df$shot_clock) & df$seconds_remaining < 24 & df$minutes_remaining == 0, df$seconds_remaining, df$shot_clock)
 
-
+# the other missing values don't seem to have a patten I can find other than most observations fall in the first three periods
 NA_obs <- df %>% 
   filter(is.na(shot_clock)) 
-
+ggplot(NA_obs,aes(period)) + 
+  geom_boxplot() 
 ggplot(NA_obs,aes(minutes_remaining)) + 
   geom_boxplot() 
 ggplot(NA_obs,aes(seconds_remaining)) + 
   geom_boxplot()
 
-SC_mean_byGame <- df %>% 
-  group_by(period) %>% 
-  summarise(clock = if_else(is.na(shot_clock), mean(shot_clock, na.rm = T), shot_clock))
+# after looking at the relationship between mean shot clock and other variables I settled that period would be the best varible to base the 
+## mean values off
+df %>% 
+  group_by(period) %>%
+  summarise(clock = mean(shot_clock, na.rm= T)) %>% 
+  ggplot(aes(period,clock)) + geom_point()
+# as I am going to do the mean of other varaibles to deal with the remaining NA values I will do it after the data has been split to not affect the 
+## out of sample performance
 
-SC_mean <- if_else(is.na(df$shot_clock), mean(df$shot_clock, na.rm = T), df$shot_clock)
-
-NA_check <- cbind(df$shot_clock, SC_mean_byGame$clock, SC_mean)
-
-na_mean_check <- which(is.na(df$shot_clock))
-NA_check[na_mean_check,]
-
-clock <- round(SC_mean_byGame$clock, digits = 2)
-df$shot_clock <- clock2
-
-sum(is.na(df))
-
-rm(NA_check,NA_obs, SC_mean, SC_mean_byGame, clock, na_mean_check, vars_with_NA)
+rm(vars_with_NA)
 ```
 
 ```{r split data}
@@ -87,65 +123,236 @@ dim(testing)
 rm(inTrain)
 ```
 
+```{r NA's}
+# imputing the mean of the period into the NA values and cloning the data frame
+SC_mean_by_period <- training %>% 
+  group_by(period) %>%
+  mutate(clock = if_else(is.na(shot_clock), mean(shot_clock, na.rm = T), shot_clock)) 
+
+SC_mean_by_period_values <- training %>% 
+  group_by(period) %>%
+  summarise(clock = mean(shot_clock))
+
+# calculing the total mean of shot clock and imputing into a cloned data frame for evalution
+SC_mean <- if_else(is.na(training$shot_clock), mean(training$shot_clock, na.rm = T), training$shot_clock)
+
+# binding the three columns together to compare the NA values have been filled and what the difference is between column mean and mean by period
+NA_check <- cbind(training$shot_clock, SC_mean_by_period$clock, SC_mean)
+na_mean_check <- which(is.na(training$shot_clock))
+NA_check[na_mean_check,]
+
+# rounding the imputed values back to two digits
+clock <- round(SC_mean_by_period$clock, digits = 2)
+
+# saving over the intial dataframe with the new values
+training$shot_clock <- clock
+
+# checking that all the NA values are gone
+sum(is.na(training))
+
+# imputing the NA values based of the training set into the testing set
+testing$shot_clock[which(is.na(testing$shot_clock) & testing$period == 1)] <- SC_mean_by_period_values$clock[1]
+testing$shot_clock[which(is.na(testing$shot_clock) & testing$period == 2)] <- SC_mean_by_period_values$clock[2]
+testing$shot_clock[which(is.na(testing$shot_clock) & testing$period == 3)] <- SC_mean_by_period_values$clock[3]
+testing$shot_clock[which(is.na(testing$shot_clock) & testing$period == 4)] <- SC_mean_by_period_values$clock[4]
+testing$shot_clock[which(is.na(testing$shot_clock) & testing$period == 5)] <- SC_mean_by_period_values$clock[5]
+testing$shot_clock[which(is.na(testing$shot_clock) & testing$period == 6)] <- SC_mean_by_period_values$clock[6]
+testing$shot_clock[which(is.na(testing$shot_clock) & testing$period == 7)] <- SC_mean_by_period_values$clock[7]
+
+sum(is.na(testing))
+
+rm(NA_check, SC_mean, SC_mean_by_period, clock, na_mean_check,SC_mean_by_period_values)
+
+
+```
+
+
+```{r create variables}
+
+# FG % based on action type, concern is low number of obsverations on some action types
+training <- training %>% 
+  group_by(action_type) %>% 
+  mutate(action_FG = (sum(shot_result == 'made')) / (sum(shot_result == 'made') + sum(shot_result == "missed"))) 
+
+training <- training %>% 
+  group_by(shot_zone_basic) %>% 
+  mutate(shot_zone_basic_FG = (sum(shot_result == 'made')) / (sum(shot_result == 'made') + sum(shot_result == "missed")))
+
+training <- training %>% 
+  group_by(shot_zone_range) %>% 
+  mutate(shot_zone_range_FG = (sum(shot_result == 'made')) / (sum(shot_result == 'made') + sum(shot_result == "missed"))) 
+
+training <- training %>% 
+  group_by(pts_type) %>% 
+  mutate(FG_2pt_3pt = (sum(shot_result == 'made')) / (sum(shot_result == 'made') + sum(shot_result == "missed"))) 
+
+training <- training %>% 
+  group_by(period) %>% 
+  mutate(period_FG = (sum(shot_result == 'made')) / (sum(shot_result == 'made') + sum(shot_result == "missed"))) 
+
+action_FG <- training %>% 
+  group_by(action_type) %>% 
+  summarise(action_FG = (sum(shot_result == 'made')) / (sum(shot_result == 'made') + sum(shot_result == "missed"))) 
+testing <- left_join(testing,action_FG, by = 'action_type')
+
+shot_zone_basic_FG <- training %>% 
+  group_by(shot_zone_basic) %>% 
+  summarise(shot_zone_basic_FG = (sum(shot_result == 'made')) / (sum(shot_result == 'made') + sum(shot_result == "missed")))
+testing <- left_join(testing,shot_zone_basic_FG, by = 'shot_zone_basic')
+
+shot_zone_range_FG <- training %>% 
+  group_by(shot_zone_range) %>% 
+  summarise(shot_zone_range_FG = (sum(shot_result == 'made')) / (sum(shot_result == 'made') + sum(shot_result == "missed"))) 
+testing <- left_join(testing,shot_zone_range_FG, by = 'shot_zone_range')
+
+FG_2pt_3pt <- training %>% 
+  group_by(pts_type) %>% 
+  summarise(FG_2pt_3pt = (sum(shot_result == 'made')) / (sum(shot_result == 'made') + sum(shot_result == "missed"))) 
+testing <- left_join(testing,FG_2pt_3pt, by = 'pts_type')
+
+period_FG <- training %>% 
+  group_by(period) %>% 
+  summarise(period_FG = (sum(shot_result == 'made')) / (sum(shot_result == 'made') + sum(shot_result == "missed")))  
+testing <- left_join(testing,period_FG, by = 'period')
+
+rm(action_FG,FG_2pt_3pt,period_FG,shot_zone_basic_FG,shot_zone_range_FG)
+```
+
+
+
 ```{r EDA of y}
-df %>%  
+training %>%  
   count(shot_result) %>% 
   mutate(prop = prop.table(n)) %>% 
   ggplot(aes(shot_result, prop, fill = shot_result)) +
   geom_bar(stat  = 'identity', position = 'dodge') +
-  theme(legend.position = "none") %>% 
-  scale_y_continuous(seq(from = 0, to = 0.7, by = .05))
-```
-
-```{r Scatterplot}
-## a function to create scatterplots
-gg_scatter <-  function(feature) {
-  ggplot(training, aes(x = .data[[feature]], y = shot_result)) +
-    geom_point(colour = 'violet', alpha = 0.5) +
-    geom_smooth(method = 'lm', colour = "blue" ) +
-    geom_smooth(colour = 'purple') 
-}
-
-## establish an object that contains the variables that are either numerical or have more than 20 unique characters
-numeric_vars <- training %>% 
-  select(where(is.numeric), where(~length(unique(.x)) > 20),- shot_result) %>% 
-  names(.)  
-
-## for loop to create all the scatterplots
-for (i in seq_along(numeric_vars)) {
-  print(gg_scatter(numeric_vars[i]))
-}
-
+  theme(legend.position = "none") 
 ```
 
 ```{r Boxplot}
 ## a function to create boxplots
-
 gg_boxplot <- function(feature){
-  ggplot(data = training, aes(x = reorder(.data[[feature]], shot_result, median),
-                              y = shot_result,
-                              fill = reorder(.data[[feature]], shot_result, median))) +
+  ggplot(data = training, aes(y = .data[[feature]], x = shot_result,
+                              fill = shot_result)) +
     geom_boxplot() +
-    xlab(paste(feature)) +
+    xlab('shot result') +
     theme(legend.position = "none", 
           axis.text.x = element_text(angle = 45))
 }
-## establish an object that contains the variables that are either catergorical or have less than 20 unique characters
-character_vars <- training %>% 
-  select(where(is_character), where(~length(unique(.x)) <= 20),- shot_result) %>% 
-  names(.)  
+## establish an object that contains the variables that are either numeric or have more than 5 unique characters
+numeric_vars <- training %>% 
+  select(where(is_numeric),where(~length(unique(.x)) > 5) , - c(shot_result, pts, pts_type, shot_zone_basic_FG, 
+                                                                action_FG, shot_zone_range_FG, FG_2pt_3pt, period_FG,
+                                                                action_type, shot_zone_basic, shot_zone_area, 
+                                                                Opposition, Year, Month, last_5,Overtime, 
+                                                                shot_clock_simple, close_def_dist_simple)) %>% names(.)  
 
 ## for loop to create all the boxplots
+
+for (i in seq_along(numeric_vars)) {
+  print(gg_boxplot(numeric_vars[i]))
+}
+
+# no clear affect on make or miss
+training <- training %>% 
+  select(-c(game_id,
+            shot_number,
+            minutes_remaining))
+
+```
+
+
+```{r Boxplot}
+gg_barplot <- function(feature){
+  training %>%
+  group_by(.data[[feature]]) %>% 
+  count(shot_result) %>% 
+  mutate(prop = prop.table(n)) %>%
+  ggplot(aes(shot_result, prop, fill = .data[[feature]])) +
+  geom_bar(stat  = 'identity', position = 'dodge')
+}
+
+character_vars <- training %>% 
+  select(where(is_character),where(~length(unique(.x)) <= 5) ,- c(shot_result, period, action_type,pts, pts_type, FG_2pt_3pt,
+                                                                  shot_zone_range_FG)) %>%  names(.)  
+
+## for loop to create all the boxplots
+
 for (i in seq_along(character_vars)) {
-  print(gg_boxplot(character_vars[i]))
+  print(gg_barplot(character_vars[i]))
+}
+
+training$last_5 <- factor(training$last_5)
+training$Overtime <- factor(training$Overtime)
+
+# no clear affect on make or miss
+training <- training %>% 
+  select(-Year)
+```
+
+```{r Barplot agains Prob}
+gg_barplot_stack <- function(feature){
+  training %>%
+  group_by(.data[[feature]]) %>% 
+  count(shot_result) %>% 
+  mutate(prop = prop.table(n)) %>%
+  ggplot(aes(.data[[feature]], prop, fill = shot_result)) +
+  geom_bar(position = 'stack',stat = 'identity')
+}
+
+for (i in seq_along(character_vars)) {
+  print(gg_barplot_stack(character_vars[i]))
+}
+
+
+```
+
+
+```{r Scatterplot}
+gg_scatter <- function(feature){
+  training %>% 
+  group_by(.data[[feature]]) %>% 
+  mutate(FG = (sum(shot_result == 'made')) / (sum(shot_result == 'made') + sum(shot_result == "missed"))) %>% 
+  ggplot(aes(.data[[feature]], FG)) +
+    geom_point() +
+    xlab('shot result') +
+    theme(axis.text.x = element_text(angle = 45, vjust = 1))  
+  }
+
+gg_scatter('shot_zone_basic')
+
+created_vars <- c('shot_zone_range', 'action_type', 'shot_zone_basic', 'pts_type', 'period')
+
+for (i in seq_along(created_vars)) {
+  print(gg_scatter(created_vars[i]))
 }
 
 ```
 
+
 ```{r NZV}
+nearZeroVar(training, names = T)
+
+
+training <- training %>% 
+  select(-Overtime)
+
 ```
 
 ```{r multicolinearity}
+## create a correlation matrix of all the numeric variables
+cor_mat <- training %>% 
+  select(where(is.numeric)) %>% 
+  cor(., method = 'spearman')
+
+## select the variables that display multicolinearty above 0.8
+cor_features <- findCorrelation(cor_mat, cutoff = 0.8, names = T, exact = FALSE)
+
+## remove the variables that display multicolinearty
+## leaving the variables that best represent the correlation
+training <- training %>% 
+  select(-all_of(cor_features))
+
 ```
 --------------------------------------------------------------------------------------------------------------------------------------
 ```{r Cross validation}
