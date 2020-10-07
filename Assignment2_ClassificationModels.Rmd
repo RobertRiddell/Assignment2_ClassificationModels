@@ -17,11 +17,11 @@ library(ggplot2)
 library(stringr)
 ```
 
-```{r Read in data}
+```{r Read in data, include=FALSE}
 df <- read_csv('2014_NBA_shot-data.csv')
 ```
 
-```{r View Data}
+```{r View Data, include=FALSE}
 glimpse(df)
 
 # Add a variable to the whole data frame, as these variables are only ever calculated based off the individual obeservation they should not affect
@@ -30,7 +30,6 @@ df <- df %>%
   mutate(last_5 = if_else(period == 4 & minutes_remaining < 5, 1,0)) 
 df <- df %>% 
   mutate(Overtime = if_else(period == 5 | period == 6 | period == 7, 1, 0)) 
-df$shot_clock_simple <- cut_interval(df$shot_clock,n = 6)
 df$close_def_dist_simple <- cut_interval(df$close_def_dist,n = 10)
 
 
@@ -66,7 +65,7 @@ df <- df %>%
 
 ```
 
-```{r Na exploration}
+```{r Na exploration, include=FALSE}
 # this shows that all the missing values relate to the variable shot_clock
 sum(is.na(df))
 gg_miss_var(df)
@@ -104,6 +103,8 @@ df %>%
 # as I am going to do the mean of other varaibles to deal with the remaining NA values I will do it after the data has been split to not affect the 
 ## out of sample performance
 
+
+
 rm(vars_with_NA)
 ```
 
@@ -123,7 +124,7 @@ dim(testing)
 rm(inTrain)
 ```
 
-```{r NA's}
+```{r NA's, include=FALSE}
 # imputing the mean of the period into the NA values and cloning the data frame
 SC_mean_by_period <- training %>% 
   group_by(period) %>%
@@ -163,11 +164,13 @@ sum(is.na(testing))
 
 rm(NA_check, SC_mean, SC_mean_by_period, clock, na_mean_check,SC_mean_by_period_values)
 
+training$shot_clock_simple <- cut_interval(training$shot_clock,n = 6)
+testing$shot_clock_simple <- cut_interval(testing$shot_clock,n = 6)
 
 ```
 
 
-```{r create variables}
+```{r create variables, include=FALSE}
 
 # FG % based on action type, concern is low number of obsverations on some action types
 training <- training %>% 
@@ -220,7 +223,7 @@ rm(action_FG,FG_2pt_3pt,period_FG,shot_zone_basic_FG,shot_zone_range_FG)
 
 
 
-```{r EDA of y}
+```{r EDA of y, include=FALSE}
 training %>%  
   count(shot_result) %>% 
   mutate(prop = prop.table(n)) %>% 
@@ -262,7 +265,7 @@ training <- training %>%
 ```
 
 
-```{r Boxplot}
+```{r Boxplot, include=FALSE}
 gg_barplot <- function(feature){
   training %>%
   group_by(.data[[feature]]) %>% 
@@ -275,6 +278,7 @@ gg_barplot <- function(feature){
 character_vars <- training %>% 
   select(where(is_character),where(~length(unique(.x)) <= 5) ,- c(shot_result, period, action_type,pts, pts_type, FG_2pt_3pt,
                                                                   shot_zone_range_FG)) %>%  names(.)  
+
 
 ## for loop to create all the boxplots
 
@@ -290,7 +294,7 @@ training <- training %>%
   select(-Year)
 ```
 
-```{r Barplot agains Prob}
+```{r Barplot agains Prob, eval=FALSE, include=FALSE}
 gg_barplot_stack <- function(feature){
   training %>%
   group_by(.data[[feature]]) %>% 
@@ -355,16 +359,33 @@ training <- training %>%
 
 ```
 --------------------------------------------------------------------------------------------------------------------------------------
-```{r Cross validation}
-```
+```{r Cross validation, eval=FALSE, include=FALSE}
+control_obj <- trainControl(method = "cv", number = 5)
 
+```
+```{undefined include=FALSE}
 ```{r Logistic Regression}
+set.seed(345)
+mdl_logreg <- train(shot_result~.,
+                    data = training,
+                    method = "glm",
+                    family = 'binomial',
+                    trControl = control_obj)
+summary(mdl_logreg)
+
 ```
 
 ```{r Probabilities}
+probabilties <- predict(mdl_logreg, type = 'prob')
+
+class_predictions <- predict(mdl_logreg, type = "raw")
+head(bind_cols(probabilties,class_predictions=class_predictions))
+
 ```
 
 ```{r Confusion Matrix}
+confusionMatrix(class_predictions, reference = training$shot_result)
+
 ```
 
 ```{r probability distribution}
@@ -373,6 +394,19 @@ ggplot(data = NULL, aes(probabilties$pass, ..count..)) +
 ```
 
 ```{r ROC Curve}
+training <- training %>% 
+  mutate(play_type2 =if_else(play_type=="pass", 1,0)) %>% 
+  bind_cols(pass_prob = probabilties$pass)
+
+pROC::roc(response = training$play_type2,
+          predictor = training$pass_prob,
+          ci = T,
+          plot = T,
+          legacy.axes = T,
+          print.auc = T,
+          print.thres = T,
+          asp = NA)
+
 ```
 
 ```{r Decsion tree}
