@@ -56,12 +56,14 @@ df <- df %>%
          player_name,
          case_no,
          game_event_id,
-         matchup))
+         matchup,
+         pts))
 
 # scatterplot: game_id, 
 # boxplot: team ID and prob
-
-?data.frame
+df <- df %>% 
+  mutate_at(vars(location, shot_result,action_type,shot_type,
+                 shot_zone_basic, shot_zone_area, shot_zone_range), as.factor)
 
 ```
 
@@ -132,7 +134,7 @@ SC_mean_by_period <- training %>%
 
 SC_mean_by_period_values <- training %>% 
   group_by(period) %>%
-  summarise(clock = mean(shot_clock))
+  summarise(clock = mean(shot_clock, na.rm = T))
 
 # calculing the total mean of shot clock and imputing into a cloned data frame for evalution
 SC_mean <- if_else(is.na(training$shot_clock), mean(training$shot_clock, na.rm = T), training$shot_clock)
@@ -140,7 +142,7 @@ SC_mean <- if_else(is.na(training$shot_clock), mean(training$shot_clock, na.rm =
 # binding the three columns together to compare the NA values have been filled and what the difference is between column mean and mean by period
 NA_check <- cbind(training$shot_clock, SC_mean_by_period$clock, SC_mean)
 na_mean_check <- which(is.na(training$shot_clock))
-NA_check[na_mean_check,]
+#NA_check[na_mean_check,]
 
 # rounding the imputed values back to two digits
 clock <- round(SC_mean_by_period$clock, digits = 2)
@@ -175,23 +177,28 @@ testing$shot_clock_simple <- cut_interval(testing$shot_clock,n = 6)
 # FG % based on action type, concern is low number of obsverations on some action types
 training <- training %>% 
   group_by(action_type) %>% 
-  mutate(action_FG = (sum(shot_result == 'made')) / (sum(shot_result == 'made') + sum(shot_result == "missed"))) 
+  mutate(action_FG = (sum(shot_result == 'made')) / (sum(shot_result == 'made') + sum(shot_result == "missed"))) %>% 
+  ungroup()
 
 training <- training %>% 
   group_by(shot_zone_basic) %>% 
-  mutate(shot_zone_basic_FG = (sum(shot_result == 'made')) / (sum(shot_result == 'made') + sum(shot_result == "missed")))
+  mutate(shot_zone_basic_FG = (sum(shot_result == 'made')) / (sum(shot_result == 'made') + sum(shot_result == "missed")))%>% 
+  ungroup()
 
 training <- training %>% 
   group_by(shot_zone_range) %>% 
-  mutate(shot_zone_range_FG = (sum(shot_result == 'made')) / (sum(shot_result == 'made') + sum(shot_result == "missed"))) 
+  mutate(shot_zone_range_FG = (sum(shot_result == 'made')) / (sum(shot_result == 'made') + sum(shot_result == "missed"))) %>% 
+  ungroup()
 
 training <- training %>% 
   group_by(pts_type) %>% 
-  mutate(FG_2pt_3pt = (sum(shot_result == 'made')) / (sum(shot_result == 'made') + sum(shot_result == "missed"))) 
+  mutate(FG_2pt_3pt = (sum(shot_result == 'made')) / (sum(shot_result == 'made') + sum(shot_result == "missed"))) %>% 
+  ungroup()
 
 training <- training %>% 
   group_by(period) %>% 
-  mutate(period_FG = (sum(shot_result == 'made')) / (sum(shot_result == 'made') + sum(shot_result == "missed"))) 
+  mutate(period_FG = (sum(shot_result == 'made')) / (sum(shot_result == 'made') + sum(shot_result == "missed"))) %>% 
+  ungroup()
 
 action_FG <- training %>% 
   group_by(action_type) %>% 
@@ -232,7 +239,7 @@ training %>%
   theme(legend.position = "none") 
 ```
 
-```{r Boxplot}
+```{r Boxplot, eval=FALSE, include=FALSE}
 ## a function to create boxplots
 gg_boxplot <- function(feature){
   ggplot(data = training, aes(y = .data[[feature]], x = shot_result,
@@ -244,7 +251,7 @@ gg_boxplot <- function(feature){
 }
 ## establish an object that contains the variables that are either numeric or have more than 5 unique characters
 numeric_vars <- training %>% 
-  select(where(is_numeric),where(~length(unique(.x)) > 5) , - c(shot_result, pts, pts_type, shot_zone_basic_FG, 
+  select(where(is_numeric),where(~length(unique(.x)) > 5) , - c(shot_result, pts_type, shot_zone_basic_FG, 
                                                                 action_FG, shot_zone_range_FG, FG_2pt_3pt, period_FG,
                                                                 action_type, shot_zone_basic, shot_zone_area, 
                                                                 Opposition, Year, Month, last_5,Overtime, 
@@ -255,7 +262,10 @@ numeric_vars <- training %>%
 for (i in seq_along(numeric_vars)) {
   print(gg_boxplot(numeric_vars[i]))
 }
+```
 
+
+```{r Boxplot, include=FALSE}
 # no clear affect on make or miss
 training <- training %>% 
   select(-c(game_id,
@@ -265,7 +275,7 @@ training <- training %>%
 ```
 
 
-```{r Boxplot, include=FALSE}
+```{r Boxplot, eval=FALSE, include=FALSE}
 gg_barplot <- function(feature){
   training %>%
   group_by(.data[[feature]]) %>% 
@@ -276,7 +286,7 @@ gg_barplot <- function(feature){
 }
 
 character_vars <- training %>% 
-  select(where(is_character),where(~length(unique(.x)) <= 5) ,- c(shot_result, period, action_type,pts, pts_type, FG_2pt_3pt,
+  select(where(is_character),where(~length(unique(.x)) <= 5) ,- c(shot_result, period, action_type, pts_type, FG_2pt_3pt,
                                                                   shot_zone_range_FG)) %>%  names(.)  
 
 
@@ -285,7 +295,10 @@ character_vars <- training %>%
 for (i in seq_along(character_vars)) {
   print(gg_barplot(character_vars[i]))
 }
+```
 
+
+```{r Boxplot, include=FALSE}
 training$last_5 <- factor(training$last_5)
 training$Overtime <- factor(training$Overtime)
 
@@ -312,7 +325,7 @@ for (i in seq_along(character_vars)) {
 ```
 
 
-```{r Scatterplot}
+```{r Scatterplot, eval=FALSE, include=FALSE}
 gg_scatter <- function(feature){
   training %>% 
   group_by(.data[[feature]]) %>% 
@@ -357,13 +370,28 @@ cor_features <- findCorrelation(cor_mat, cutoff = 0.8, names = T, exact = FALSE)
 training <- training %>% 
   select(-all_of(cor_features))
 
-```
---------------------------------------------------------------------------------------------------------------------------------------
-```{r Cross validation, eval=FALSE, include=FALSE}
-control_obj <- trainControl(method = "cv", number = 5)
 
 ```
-```{undefined include=FALSE}
+
+
+--------------------------------------------------------------------------------------------------------------------------------------
+
+
+
+```{r Cross validation, include=FALSE}
+control_obj <- trainControl(
+  method = "cv",
+  number = 5,
+  savePredictions = "final",
+  classProbs = T, 
+  summaryFunction = twoClassSummary
+)
+
+```
+
+
+
+
 ```{r Logistic Regression}
 set.seed(345)
 mdl_logreg <- train(shot_result~.,
@@ -379,27 +407,73 @@ summary(mdl_logreg)
 probabilties <- predict(mdl_logreg, type = 'prob')
 
 class_predictions <- predict(mdl_logreg, type = "raw")
-head(bind_cols(probabilties,class_predictions=class_predictions))
+
+head(bind_cols(probabilties,class_predictions=class_predictions, observed = training$shot_result))
 
 ```
 
 ```{r Confusion Matrix}
 confusionMatrix(class_predictions, reference = training$shot_result)
-
 ```
 
 ```{r probability distribution}
-ggplot(data = NULL, aes(probabilties$pass, ..count..)) +
-  geom_histogram(aes(fill = training$play_type))
+ggplot(data = NULL, aes(probabilties$made, ..count..)) +
+  geom_histogram(aes(fill = training$shot_result))
+
 ```
 
 ```{r ROC Curve}
-training <- training %>% 
-  mutate(play_type2 =if_else(play_type=="pass", 1,0)) %>% 
-  bind_cols(pass_prob = probabilties$pass)
+complete_shot_binary <- if_else(training$shot_result == "made",1,0)
 
-pROC::roc(response = training$play_type2,
-          predictor = training$pass_prob,
+pROC::roc(response = complete_shot_binary,
+          predictor = probabilties$made,
+          ci = T,
+          plot = T,
+          legacy.axes = T,
+          print.auc = T,
+          print.thres = T,
+          asp = NA)
+
+
+```
+
+```{r Decsion tree}
+set.seed(345)
+
+tree_mdl  <- train(shot_result ~. , data = training ,
+                   method = 'rpart',
+                   tuneGrid = expand.grid(cp = seq(0.01,0.1,0.01)),
+                   trControl = control_obj,
+                   metric = "ROC")
+
+tree_mdl
+plot(tree_mdl)
+rattle::fancyRpartPlot(tree_mdl$finalModel, sub = "", palettes = 'RdBu')
+
+```
+
+```{r Confusion matrix}
+# actual predictions
+predictions_tree <- predict(tree_mdl, type = "raw")
+
+# probabilties of seeing each result
+prob_tree <- predict(tree_mdl,newdata = training ,  type = "prob")
+
+prob_tree <- prob_tree %>% 
+  select('made') %>% 
+  unlist() %>% 
+  unname()
+
+
+confusionMatrix(data = predictions_tree,
+                reference = training$shot_result,
+                positive = "made")
+
+```
+
+```{r ROC Curve}
+pROC::roc(response = complete_shot_binary,
+          predictor = prob_tree,
           ci = T,
           plot = T,
           legacy.axes = T,
@@ -409,36 +483,135 @@ pROC::roc(response = training$play_type2,
 
 ```
 
-```{r Decsion tree}
+```{r random forest, eval=FALSE, include=FALSE}
+set.seed(345)
+
+rf_mdl  <- train(shot_result ~. , data = training ,
+                   method = 'ranger',
+                   trControl = control_obj,
+                   verbose = FALSE)
+                   
+
+rf_mdl
+```
+
+```{r Confusion matrix, eval=FALSE, include=FALSE}
+predictions_rf <- predict(rf_mdl, type = "raw")
+
+# probabilties of seeing each result
+prob_rf <- predict(rf_mdl, type = "prob")
+
+prob_rf <- prob_rf %>% 
+  select('made') %>% 
+  unlist() %>% 
+  unname()
+
+
+confusionMatrix(data = predictions_rf,
+                reference = training$shot_result,
+                positive = "made")
+
+```
+
+```{r ROC Curve, eval=FALSE, include=FALSE}
+pROC::roc(repsonse = complete_shot_binary,
+          predictor = prob_rf,
+          ci = T, 
+          plot = T,
+          legacy.axes = T,
+          print.auc = T,
+          print.thres = T,
+          asp = NA)
+
+```
+
+```{r}
+
+knn_mdl  <- train(shot_result ~. , data = training,
+                 method = 'knn',
+                 trControl = control_obj,
+                 preProcess = c('center', 'scale'),
+                 tunelength = 20)
+
 ```
 
 ```{r Confusion matrix}
-confusionMatrix(data = predictions_tree,
-                reference = testing$complete_pass,
-                positive = "complete")
+predictions_knn <- predict(knn_mdl, type = "raw")
+
+# probabilties of seeing each result
+prob_knn <- predict(knn_mdl, type = "prob")
+
+prob_knn <- prob_rf %>% 
+  select('made') %>% 
+  unlist() %>% 
+  unname()
+
+
+confusionMatrix(data = predictions_knn,
+                reference = training$shot_result,
+                positive = "made")
 
 ```
 
 ```{r ROC Curve}
+pROC::roc(repsonse = complete_shot_binary,
+          predictor = prob_knn,
+          ci = T, 
+          plot = T,
+          legacy.axes = T,
+          print.auc = T,
+          print.thres = T,
+          asp = NA)
+
 ```
 
-```{r random forest}
+```{r}
+installed.packages('klaR')
+library(klaR)
+
+nb_mdl  <- train(shot_result ~. , data = training,
+                 method = 'nb',
+                 trControl = control_obj)
+
 ```
 
 ```{r Confusion matrix}
-confusionMatrix(data = predictions_tree,
-                reference = testing$complete_pass,
-                positive = "complete")
+predictions_nb <- predict(nb_mdl, type = "raw")
+
+# probabilties of seeing each result
+prob_nb <- predict(nb_mdl, type = "prob")
+
+prob_nb <- prob_rf %>% 
+  select('made') %>% 
+  unlist() %>% 
+  unname()
+
+
+confusionMatrix(data = predictions_nb,
+                reference = training$shot_result,
+                positive = "made")
 
 ```
 
 ```{r ROC Curve}
+pROC::roc(repsonse = complete_shot_binary,
+          predictor = prob_nb,
+          ci = T, 
+          plot = T,
+          legacy.axes = T,
+          print.auc = T,
+          print.thres = T,
+          asp = NA)
+
 ```
+
 
 ```{r in sample performance}
 resamps <- resamples(list(tree = tree_mdl,
-                          rf = rf_mdl,
-                          logreg = logreg_mdl))
+                          #rf = rf_mdl,
+                          logreg = logreg_mdl,
+                          knn = knn_md,
+                          nb = nb_mdl))
 
 bwplot(resamps)
 summary(resamps)
