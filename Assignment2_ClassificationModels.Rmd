@@ -390,8 +390,6 @@ control_obj <- trainControl(
 ```
 
 
-
-
 ```{r Logistic Regression}
 set.seed(345)
 mdl_logreg <- train(shot_result~.,
@@ -438,6 +436,7 @@ pROC::roc(response = complete_shot_binary,
 ```
 
 ```{r Decsion tree}
+
 set.seed(345)
 
 tree_mdl  <- train(shot_result ~. , data = training ,
@@ -484,6 +483,8 @@ pROC::roc(response = complete_shot_binary,
 ```
 
 ```{r random forest, eval=FALSE, include=FALSE}
+training <- training[1:2000,]
+
 set.seed(345)
 
 rf_mdl  <- train(shot_result ~. , data = training ,
@@ -493,6 +494,7 @@ rf_mdl  <- train(shot_result ~. , data = training ,
                    
 
 rf_mdl
+glimpse(training)
 ```
 
 ```{r Confusion matrix, eval=FALSE, include=FALSE}
@@ -526,16 +528,19 @@ pROC::roc(repsonse = complete_shot_binary,
 ```
 
 ```{r}
+library(MASS)
 
 knn_mdl  <- train(shot_result ~. , data = training,
                  method = 'knn',
-                 trControl = control_obj,
-                 preProcess = c('center', 'scale'),
-                 tunelength = 20)
+                 #trControl = control_obj,
+                 preProcess = c('center', 'scale'))
+                 #tunelength = 20)
 
+detach("package:MASS", unload=TRUE)
 ```
 
 ```{r Confusion matrix}
+
 predictions_knn <- predict(knn_mdl, type = "raw")
 
 # probabilties of seeing each result
@@ -566,13 +571,13 @@ pROC::roc(repsonse = complete_shot_binary,
 ```
 
 ```{r}
-installed.packages('klaR')
-library(klaR)
+x <- training[,-13]
+y <- training$shot_result
 
-nb_mdl  <- train(shot_result ~. , data = training,
-                 method = 'nb',
-                 trControl = control_obj)
-
+nb_mdl  <- train(x = x, 
+                 y = y,
+                 method = 'nb')
+                 #trControl = control_obj)
 ```
 
 ```{r Confusion matrix}
@@ -609,7 +614,7 @@ pROC::roc(repsonse = complete_shot_binary,
 ```{r in sample performance}
 resamps <- resamples(list(tree = tree_mdl,
                           #rf = rf_mdl,
-                          logreg = logreg_mdl,
+                          logreg = mdl_logreg,
                           knn = knn_md,
                           nb = nb_mdl))
 
