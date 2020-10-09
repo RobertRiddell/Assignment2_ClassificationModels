@@ -300,9 +300,8 @@ training <-  training %>%
 ```{r Boxplot, include=FALSE}
 # no clear affect on make or miss
 training <- training %>% 
-  select(-Year,
-         Overtime,
-         action_FG)
+  select(-c(Year,
+         Overtime))
 ```
 
 
@@ -349,20 +348,30 @@ training <- training %>%
   select(-all_of(cor_features))
 ```
 
+```{r}
+glimpse(training)
+
+training <- training %>% 
+  select(-c(close_def_dist_simple,shot_zone_basic,FG_2pt_3pt))
+
+```
+
 
 --------------------------------------------------------------------------------------------------------------------------------------
 
-```{r}
-training <- training %>% 
-  select(c(action_FG, loc_y, shot_zone_basic, touch_time, close_def_dist, shot_clock, shot_result))
-```
-`
-
-
 ```{r Cross validation, include=FALSE}
 control_obj <- trainControl(
+  method = "repeatedcv",
+  number = 10,
+  repeats = 5,
+  savePredictions = "final",
+  classProbs = T, 
+  summaryFunction = twoClassSummary
+)
+
+control_obj <- trainControl(
   method = "cv",
-  number = 5,
+  number = 10,
   savePredictions = "final",
   classProbs = T, 
   summaryFunction = twoClassSummary
@@ -389,7 +398,7 @@ set.seed(345)
 
 tree_mdl  <- train(shot_result ~. , data = training ,
                    method = 'rpart',
-                   tuneGrid = expand.grid(cp = seq(0.01,0.1,0.01)),
+                   tuneGrid = expand.grid(cp = seq(0.001,0.2,0.001)),
                    trControl = control_obj,
                    metric = "ROC")
 
@@ -412,6 +421,7 @@ rf_mdl  <- train(shot_result ~. , data = training ,
                    
 
 rf_mdl
+plot(rf_mdl)
 glimpse(training)
 ```
 
