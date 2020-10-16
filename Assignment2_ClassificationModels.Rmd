@@ -344,8 +344,7 @@ training <-  training %>%
 ```{r Boxplot, include=FALSE}
 # Thes variables do not seem to have a clear affect on make or miss
 training <- training %>% 
-  select(-c(Year,
-         Overtime))
+  select(-Year)
 ```
 
 
@@ -379,6 +378,9 @@ nearZeroVar(training, names = T)
 training %>% 
   group_by(Overtime) %>% 
   count()
+
+training <- training %>% 
+  select(-Overtime)
 ```
 
 ```{r multicolinearity}
@@ -413,6 +415,8 @@ glimpse(training)
 training <- training %>% 
   select(-c(close_def_dist_simple,shot_zone_basic,FG_2pt_3pt))
 
+training <- training %>% 
+  select(-c(Opposition, Month, Day))
 ```
 
 
@@ -507,7 +511,7 @@ confusionMatrix(data = tree_mdl,
 # due to the significant amount or processing i did most of my iterations on a random sample of 7000 observations from the training data
 set.seed(345)
 
-inTrain <- createDataPartition(y = training$shot_result, p = 0.05, list = F)
+inTrain <- createDataPartition(y = training$shot_result, p = 0.1, list = F)
 
 rf_training <-  training %>% 
   slice(inTrain)
