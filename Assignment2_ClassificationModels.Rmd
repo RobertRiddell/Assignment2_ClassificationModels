@@ -413,6 +413,11 @@ glimpse(training)
 training <- training %>% 
   select(-c(close_def_dist_simple,shot_zone_basic,FG_2pt_3pt))
 
+# While peforming modelling iterations these varaibles were found to have no affect so were removed
+training <- training %>% 
+  select(-c(Day,Opposition, Month, shot_clock_simple))
+
+
 ```
 
 
@@ -449,8 +454,8 @@ mdl_logreg <- train(shot_result~.,
                     method = "glm",
                     family = 'binomial',
                     trControl = control_obj)
-summary(mdl_logreg)
-# The logistic regression model returned the values ROC:0.69 Sens:0.44 Spec:0.92
+mdl_logreg
+# The logistic regression model returned the values ROC:0.69 Sens:0.44 Spec:0.82
 # as the sensitivty is 0.44 we can assume the model will be poor at predicting made shots
 # the higher spec value shows the model is better an predicting a missed shot
 ```
@@ -480,7 +485,7 @@ tree_mdl
 plot(tree_mdl)
 rattle::fancyRpartPlot(tree_mdl$finalModel, sub = "", palettes = 'RdBu')
 plot(varImp(tree_mdl), top =20)
-# The decsion tree model found the best cp = 0.0024, as the cp incresaes from this point we see a decrease in ROC
+# The decsion tree model found the best cp = 0.001, as the cp incresaes from this point we see a decrease in ROC
 # Values returned were ROC: 0.66  Sens: 0.46  Spec: 0.82
 # as the sensitivty is 0.46 we can assume the model will be poor at predicting made shots
 # the higher spec value shows the model is better an predicting a missed shot
@@ -512,7 +517,7 @@ inTrain <- createDataPartition(y = training$shot_result, p = 0.05, list = F)
 rf_training <-  training %>% 
   slice(inTrain)
 
-rf_mdl  <- train(shot_result ~. , data = rf_training ,
+rf_mdl  <- train(shot_result ~. , data = training ,
                    method = 'ranger',
                    trControl = control_obj,
                    verbose = FALSE)
@@ -520,10 +525,11 @@ rf_mdl  <- train(shot_result ~. , data = rf_training ,
 
 rf_mdl
 plot(rf_mdl)
-# The random forest model found the best mtry = 51 and using the splitrule = gini
-# Values returned were ROC:0.69 Sens:0.49 Spec:0.80
+# The random forest model found the best mtry = 16 and using the splitrule = gini
+# Values returned were ROC:0.69 Sens:0.48 Spec:0.79
 # as the sensitivty is 0.49 we can assume the model will be poor at predicting made shots
 # the higher spec value shows the model is better an predicting a missed shot
+
 ```
 
 
@@ -531,7 +537,7 @@ plot(rf_mdl)
 confusionMatrix(data = rf_mdl,
                 reference = training$shot_result,
                 positive = "made")
-# accuracy on the testing set is 66%, clearly the model is better at predicting missed shows as opposed to made shots
+# accuracy on the testing set is 65%, clearly the model is better at predicting missed shows as opposed to made shots
 # this model shows an improvement on predicting made shots
 ```
 
