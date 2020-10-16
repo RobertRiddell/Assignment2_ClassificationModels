@@ -15,28 +15,61 @@ library(pROC)
 library(naniar)
 library(ggplot2)
 library(stringr)
+library(lubridate)
 ```
 
 ```{r Read in data, include=FALSE}
 df <- read_csv('2014_NBA_shot-data.csv')
 ```
 
-```{r View Data, include=FALSE}
+```{r View Data}
 glimpse(df)
 
-# Add a variable to the whole data frame, as these variables are only ever calculated based off the individual obeservation they should not affect
-## the out of sample data
+# Add some new varaibles to the dataset
+# extracting the date and the matchup from the matchup variable
+Matchup <- data.frame(str_split_fixed(df$matchup," ", n =7)) %>% 
+  select(X1,X2,X3,X7) %>% 
+  rename(Day = X2,
+         Month = X1,
+         Year = X3,
+         Opposition = X7)
+df <- cbind(df,Matchup)
+df$date <- paste(df$Year, df$Month, df$Day, sep="-") %>% ymd() %>% as.Date()
+
+# creating a variable to determine if the game is in the final 5 minutes
 df <- df %>% 
   mutate(last_5 = if_else(period == 4 & minutes_remaining < 5, 1,0)) 
+# a variable to represent if the game goes to overtime
 df <- df %>% 
   mutate(Overtime = if_else(period == 5 | period == 6 | period == 7, 1, 0)) 
+# binning the close close_def_dist into 5 bins to simplyfy and group the continous variable
 df$close_def_dist_simple <- cut_number(df$close_def_dist,n = 5)
+
+# creating some variables based on teh game by summarising player stats into the one observation
+ind_game <- df %>% 
+  group_by(team_id,date, Opposition) %>% 
+  arrange(team_id,date) %>% 
+  summarise(across(c(w),~max(.x, na.rm = TRUE))) %>% 
+  ungroup()
+# creating varaibles related to win form and total wins
+ind_game <- ind_game %>% 
+  group_by(team_id) %>% 
+  mutate(W_last = if_else(lag(w) == "W",1,0),
+         W_last = if_else(is.na(W_last),replace_na(2), W_last),
+         win = if_else(w == "W", 1, 0),
+         total_wins = if_else(w == "W", cumsum(win) - 1, cumsum(win)),
+         streak = if_else(w == 'W', sequence(rle(win)$lengths), as.integer(0)),
+         streak = lag(streak),
+         streak = if_else(is.na(streak), replace_na(as.integer(0)), streak)) %>% 
+  ungroup() %>% 
+    mutate_at(vars(W_last,win), as.factor)
+# bindning the individual game features back to the player dataset
+df <- left_join(df,ind_game, by = c("team_id","date","Opposition",'w')) 
 
 
 # through some later exploration I found these observations that gave 4 or 6 points. I thought the 4 points could be getting fouled on a three point
 ## attempt but after checking box scores that did not seem to be the case. 
-# I am not sure if these are errors in the dataset or there is some explanation I can't find. As they relate to only two players I am inclined to 
-## think it is an error in the data
+# I am not sure if these are errors in the dataset or there is some explanation I can't find. # As they relate to only two players I am inclined to think it is an error in the data
 df %>% 
   select(pts,pts_type) %>% 
   mutate(diff = pts_type - pts) %>% 
@@ -44,13 +77,10 @@ df %>%
 df %>% 
   filter(pts== 4 | pts ==6)
 
-Matchup <- data.frame(str_split_fixed(df$matchup," ", n =7)) %>% 
-  select(X1,X3,X7) %>% 
-  rename('Month' = X1,
-         'Year' = X3,
-         'Opposition' = X7)
-df <- cbind(df,Matchup)
 
+# removing variables that either will have too much of an impact on modelling 
+# i.e. if pts is left in it directly correlates to made and missed and the models will only use that data
+# the other variables have far too many unique observations to assist with modelling 
 df <- df %>% 
   select(-c(closest_defender,
          player_name,
@@ -59,8 +89,7 @@ df <- df %>%
          matchup,
          pts))
 
-# scatterplot: game_id, 
-# boxplot: team ID and prob
+# coverting the variables to factors
 df <- df %>% 
   mutate_at(vars(location, shot_result,action_type,shot_type,
                  shot_zone_basic, shot_zone_area, shot_zone_range,
@@ -68,7 +97,7 @@ df <- df %>%
 
 ```
 
-```{r Na exploration, include=FALSE}
+```{r Na exploration}
 # this shows that all the missing values relate to the variable shot_clock
 sum(is.na(df))
 gg_miss_var(df)
@@ -105,8 +134,6 @@ df %>%
   ggplot(aes(period,clock)) + geom_point()
 # as I am going to do the mean of other varaibles to deal with the remaining NA values I will do it after the data has been split to not affect the 
 ## out of sample performance
-
-
 
 rm(vars_with_NA)
 ```
@@ -174,8 +201,19 @@ testing$shot_clock_simple <- cut_interval(testing$shot_clock,n = 6)
 
 
 ```{r create variables, include=FALSE}
+# I created a range of field goal variables based on other variables in the data
+# I am still not 100% if this is appropriate as I realised that a FG% is effectivly a 
+## probability of made shot_result
 
-# FG % based on action type, concern is low number of obsverations on some action types
+# My concern is whether using the repsonse variable to create a predictor to predict the 
+## repsonse is a vaid method
+
+# As the FG% is informed by shot_result but not does not give a 100% prediction accuaracy 
+## I decided to use the variables
+
+# FG % based on action type, a concern with this is the observations for action_type are 
+## very imbalanced and this FG% will give the same weighting to each action_type even 
+### if it appears < .001% of the time
 training <- training %>% 
   group_by(action_type) %>% 
   mutate(action_FG = (sum(shot_result == 'made')) / (sum(shot_result == 'made') + sum(shot_result == "missed"))) %>% 
@@ -201,6 +239,10 @@ training <- training %>%
   mutate(period_FG = (sum(shot_result == 'made')) / (sum(shot_result == 'made') + sum(shot_result == "missed"))) %>% 
   ungroup()
 
+# I did not want to calculted the FG% using the training data as I thought that would affect
+## the out of sample testing
+# So i calcaulted the amounts based on the training data, saved that as a variable and 
+## joined it to the testing data
 action_FG <- training %>% 
   group_by(action_type) %>% 
   summarise(action_FG = (sum(shot_result == 'made')) / (sum(shot_result == 'made') + sum(shot_result == "missed"))) 
@@ -229,9 +271,8 @@ testing <- left_join(testing,period_FG, by = 'period')
 rm(action_FG,FG_2pt_3pt,period_FG,shot_zone_basic_FG,shot_zone_range_FG)
 ```
 
-
-
 ```{r EDA of y, include=FALSE}
+# When looking at the response varible it is reasonably balanced with 45% made and 55% missed
 training %>%  
   count(shot_result) %>% 
   mutate(prop = prop.table(n)) %>% 
@@ -258,7 +299,7 @@ for (i in seq_along(numeric_vars)) {
 
 
 ```{r Boxplot, include=FALSE}
-# no clear affect on make or miss
+# These variables did not seem to have an impact on shot_result
 training <- training %>% 
   select(-c(game_id,
             shot_number,
@@ -286,19 +327,22 @@ for (i in factor_vars) {
 ```
 
 ```{r}
+# When looking at the action_type we can see a very imbalanced set of observations
 training %>% 
   group_by(action_type) %>% 
   count() %>% 
   mutate(Percet_obs = n/ (length(training$action_type))) %>% 
   arrange(-n)
-
+# as action_type informs action_type_FG I decided to remove action_type to improve processing
+## time as less dummy values are created and therefore less total featires
 training <-  training %>% 
   select(-action_type)
+
 ```
 
 
 ```{r Boxplot, include=FALSE}
-# no clear affect on make or miss
+# Thes variables do not seem to have a clear affect on make or miss
 training <- training %>% 
   select(-c(Year,
          Overtime))
@@ -307,6 +351,7 @@ training <- training %>%
 
 
 ```{r Scatterplot, eval=FALSE, include=FALSE}
+# created a function to visualise the FG attributes and if they change based on the variable ## they are related too
 gg_scatter <- function(feature){
   training %>% 
   group_by(.data[[feature]]) %>% 
@@ -317,9 +362,7 @@ gg_scatter <- function(feature){
     theme(axis.text.x = element_text(angle = 45, vjust = 1))  
   }
 
-gg_scatter('shot_zone_basic')
-
-created_vars <- c('shot_zone_range', 'action_type', 'shot_zone_basic', 'pts_type', 'period')
+created_vars <- c('shot_zone_range', 'action_type', 'shot_zone_basic', 'pts_type', 'period', 'streak','total_wins')
 
 for (i in seq_along(created_vars)) {
   print(gg_scatter(created_vars[i]))
@@ -330,7 +373,12 @@ for (i in seq_along(created_vars)) {
 
 
 ```{r NZV}
+# overtime returns a near zero value as so few games go into overtime
 nearZeroVar(training, names = T)
+
+training %>% 
+  group_by(Overtime) %>% 
+  count()
 ```
 
 ```{r multicolinearity}
@@ -339,11 +387,21 @@ cor_mat <- training %>%
   select(where(is.numeric)) %>% 
   cor(., method = 'spearman')
 
+# visualise the correlation matrix
+GGally::ggcorr(cor_mat)
+# shot_distance, shot_dist and loc_y are highly correlated as they all refer to the distance from basket
+# pts_type and distance features are correlated as to get 3 points you must be a certain distance away
+# period and shot_number are correlated becasue as the period increases therefore number of shots will also
+# dribbles and touch time are highly correlated as you need to increase touch time to dribble
+# close_def_dist and distance is also highly correlated as when you are further from the ring
+## there is more space for the closest defender to be away.
+# close_def_dist, touch time and distance are correlated as when the defender is closer you are less likely to dribble
+
 ## select the variables that display multicolinearty above 0.8
 cor_features <- findCorrelation(cor_mat, cutoff = 0.8, names = T, exact = FALSE)
+# shot distance and dribbles are selected have high multicolinearity and have less of an impact on the overall data 
 
 ## remove the variables that display multicolinearty
-## leaving the variables that best represent the correlation
 training <- training %>% 
   select(-all_of(cor_features))
 ```
@@ -351,6 +409,7 @@ training <- training %>%
 ```{r}
 glimpse(training)
 
+# these variables have been selected to be removed as they appear to be better represented by otehr varibles
 training <- training %>% 
   select(-c(close_def_dist_simple,shot_zone_basic,FG_2pt_3pt))
 
@@ -360,6 +419,8 @@ training <- training %>%
 --------------------------------------------------------------------------------------------------------------------------------------
 
 ```{r Cross validation, include=FALSE}
+# establshing a control_obj for modelling
+# the repeatedcv was used to attain the figures listed but took a significant amount of time and did not significantly improve the result
 control_obj <- trainControl(
   method = "repeatedcv",
   number = 10,
@@ -381,6 +442,7 @@ control_obj <- trainControl(
 
 
 ```{r Logistic Regression}
+# running a logistic regression model
 set.seed(345)
 mdl_logreg <- train(shot_result~.,
                     data = training,
@@ -388,17 +450,29 @@ mdl_logreg <- train(shot_result~.,
                     family = 'binomial',
                     trControl = control_obj)
 summary(mdl_logreg)
+# The logistic regression model returned the values ROC:0.69 Sens:0.44 Spec:0.92
+# as the sensitivty is 0.44 we can assume the model will be poor at predicting made shots
+# the higher spec value shows the model is better an predicting a missed shot
+```
 
+
+```{r confusion matrix}
+confusionMatrix(data = mdl_logreg,
+                reference = training$shot_result,
+                positive = "made")
+
+# accuracy on the testing set is 65%, clearly the model is better at predicting missed shows as opposed to made shots
+# with the model incorrectly predicting more made as missed than correctly predicting made as made
 ```
 
 
 ```{r Decsion tree}
-
+# running a decsion tree model
 set.seed(345)
 
 tree_mdl  <- train(shot_result ~. , data = training ,
                    method = 'rpart',
-                   tuneGrid = expand.grid(cp = seq(0.001,0.2,0.001)),
+                   tuneGrid = expand.grid(cp = seq(0.001,0.004,0.0001)),
                    trControl = control_obj,
                    metric = "ROC")
 
@@ -406,15 +480,39 @@ tree_mdl
 plot(tree_mdl)
 rattle::fancyRpartPlot(tree_mdl$finalModel, sub = "", palettes = 'RdBu')
 plot(varImp(tree_mdl), top =20)
+# The decsion tree model found the best cp = 0.0024, as the cp incresaes from this point we see a decrease in ROC
+# Values returned were ROC: 0.66  Sens: 0.46  Spec: 0.82
+# as the sensitivty is 0.46 we can assume the model will be poor at predicting made shots
+# the higher spec value shows the model is better an predicting a missed shot
+
+# as we can see in the variable importance plot the action_FG is very important when splits are made
+# behind the action_FG we see the loc_y and shot_zone_basic_FG as very important as we have seen this is a measure of distance from the ring
+# after the distance variables teh touch time, shot clock and close def dist have some importance but signifincatly less
+# this steep drop off in variable importance makes sense when we look at how the cp drops when more varibles increase
+```
+
+
+```{r Confusion matrix}
+confusionMatrix(data = tree_mdl,
+                reference = training$shot_result,
+                positive = "made")
+
+# accuracy on the testing set is 65%, clearly the model is better at predicting missed shows as opposed to made shots
+# with the model incorrectly predicting more made as missed than correctly predicting made as made
 ```
 
 
 ```{r random forest}
-training <- training[1:2000,]
-
+# running a random forest model
+# due to the significant amount or processing i did most of my iterations on a random sample of 7000 observations from the training data
 set.seed(345)
 
-rf_mdl  <- train(shot_result ~. , data = training ,
+inTrain <- createDataPartition(y = training$shot_result, p = 0.05, list = F)
+
+rf_training <-  training %>% 
+  slice(inTrain)
+
+rf_mdl  <- train(shot_result ~. , data = rf_training ,
                    method = 'ranger',
                    trControl = control_obj,
                    verbose = FALSE)
@@ -422,11 +520,24 @@ rf_mdl  <- train(shot_result ~. , data = training ,
 
 rf_mdl
 plot(rf_mdl)
-glimpse(training)
+# The random forest model found the best mtry = 51 and using the splitrule = gini
+# Values returned were ROC:0.69 Sens:0.49 Spec:0.80
+# as the sensitivty is 0.49 we can assume the model will be poor at predicting made shots
+# the higher spec value shows the model is better an predicting a missed shot
+```
+
+
+```{r Confusion matrix}
+confusionMatrix(data = rf_mdl,
+                reference = training$shot_result,
+                positive = "made")
+# accuracy on the testing set is 66%, clearly the model is better at predicting missed shows as opposed to made shots
+# this model shows an improvement on predicting made shots
 ```
 
 
 ```{r in sample performance}
+# comparing the model performances
 resamps <- resamples(list(tree = tree_mdl,
                           rf = rf_mdl,
                           logreg = mdl_logreg))
@@ -434,16 +545,53 @@ resamps <- resamples(list(tree = tree_mdl,
 bwplot(resamps)
 summary(resamps)
 
+# I deceided to use the random forest model on the testing data.
+# as the random forest had a similar ROC to the Logistic model and better than the decsion tree
+# The random forest also had a better mean sens (~ +0.03 -0.05) but a slightly slower spec(~ -0.02)
+# I decided this was a fair trade off as it was more important as the gain from sens was more than the loss to spec
+# As the models are all worse at predicting made shots i thought it was best to take the one that was the best at it
 ```
 
 ```{r Apply to test}
+# actual predictions
+predictions_rf <- predict(rf_mdl, newdata = testing, type = "raw")
+
+# probabilties of seeing each result
+prob_rf <- predict(rf_mdl, newdata = testing, type = "prob")
+
 ```
 
 
 ```{r Confusion Matrix}
+# Confusion matrix
+confusionMatrix(data = predictions_rf,
+                reference = testing$shot_result,
+                positive = "made")
+# As we saw with the spec and sens the model correctly predicted twice as many misses than
+## makes, even though there is only 10% more misses in the dataset
+
+# the model predicted half of the made shots to be misses and 20% of the misses to be makes which
+## is the raw outcome of our spec and sens.
+# the overall accuracy of the model was 65% which is slightly better than a coin flip
 ```
 
 
 ```{r ROC Curve}
+made_shot_binary <- if_else(testing$shot_result == "made",1,0)
+
+prob_rf <- prob_rf %>% 
+  select('made') %>% 
+  unlist() %>% 
+  unname()
+
+pROC::roc(response = made_shot_binary,
+          predictor = prob_rf,
+          ci = T,
+          plot = T,
+          legacy.axes = T,
+          print.auc = T,
+          print.thres = 0.5,
+          asp = NA)
+# due to our lower sens values the AUC is affected, to improve the AUC we would have to devise a way to more accucartly predict made shots
 ```
 
