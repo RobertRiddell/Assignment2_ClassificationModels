@@ -508,7 +508,8 @@ confusionMatrix(data = tree_mdl,
 
 ```{r random forest}
 # running a random forest model
-# due to the significant amount or processing i did most of my iterations on a random sample of 7000 observations from the training data
+# due to the significant amount or processing timem I did most of my iterations were performed
+## on a random sample of 14000 observations from the training data
 set.seed(345)
 
 inTrain <- createDataPartition(y = training$shot_result, p = 0.1, list = F)
@@ -524,8 +525,8 @@ rf_mdl  <- train(shot_result ~. , data = rf_training ,
 
 rf_mdl
 plot(rf_mdl)
-# The random forest model found the best mtry = 51 and using the splitrule = gini
-# Values returned were ROC:0.69 Sens:0.49 Spec:0.80
+# The random forest model found the best mtry = 19 and using the splitrule = gini
+# Values returned were ROC:0.70 Sens:0.50 Spec:0.79
 # as the sensitivty is 0.49 we can assume the model will be poor at predicting made shots
 # the higher spec value shows the model is better an predicting a missed shot
 ```
@@ -576,7 +577,8 @@ confusionMatrix(data = predictions_rf,
 
 # the model predicted half of the made shots to be misses and 20% of the misses to be makes which
 ## is the raw outcome of our spec and sens.
-# the overall accuracy of the model was 65% which is slightly better than a coin flip
+# the overall accuracy of the model was 65% which is better than a coin flip but if you are
+## wanting to predict only made shots you may as well flip a coin
 ```
 
 
@@ -596,6 +598,12 @@ pROC::roc(response = made_shot_binary,
           print.auc = T,
           print.thres = 0.5,
           asp = NA)
-# due to our lower sens values the AUC is affected, to improve the AUC we would have to devise a way to more accucartly predict made shots
+# due to our lower sens values the AUC is affected, to improve the AUC we would have to
+## devise a way to more accucartly predict made shots
+
+# Overall I belive the model had difficulty predicting made shots becasue in a real world situation people players will often make lower probability shots (like a long 3pt shot) so the model will predict a miss when it is a make
+# But players are less likely to miss a high probability shots (closer than 8ft) so the model will is unlikly to predict a miss when it is a make
+# This results that the model will predict significatly more misses and therefore get a higher accucarcy on misses but the trade off is a low accucarcy on makes. 
+
 ```
 
