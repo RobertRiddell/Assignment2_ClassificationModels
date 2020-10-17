@@ -599,11 +599,17 @@ pROC::roc(response = made_shot_binary,
           print.thres = 0.5,
           asp = NA)
 # due to our lower sens values the AUC is affected, to improve the AUC we would have to
-## devise a way to more accucartly predict made shots
+## devise a way to more accucartly predict made shots (true positives)
 
-# Overall I belive the model had difficulty predicting made shots becasue in a real world situation people players will often make lower probability shots (like a long 3pt shot) so the model will predict a miss when it is a make
-# But players are less likely to miss a high probability shots (closer than 8ft) so the model will is unlikly to predict a miss when it is a make
-# This results that the model will predict significatly more misses and therefore get a higher accucarcy on misses but the trade off is a low accucarcy on makes. 
+# Overall I belive the model had difficulty predicting made shots becasue in a real world
+## situation people players will often make lower probability shots (like a long 3pt shot) so
+### in that situation the model will predict a miss when it is a make (ie false negative)
+
+# But players are less likely to miss a high probability shot (closer than 8ft) so due to the
+## high probability the model is less to predict a miss when it is a make (ie false positive)
+
+# This means that the model will predict significatly more misses and therefore get a higher
+## accucarcy on misses but the trade off is a low accucarcy on makes. 
 
 ```
 
