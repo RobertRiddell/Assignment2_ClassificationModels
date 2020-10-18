@@ -25,8 +25,8 @@ df <- read_csv('2014_NBA_shot-data.csv')
 ```{r View Data}
 glimpse(df)
 
-# Add some new varaibles to the dataset
-# extracting the date and the matchup from the matchup variable
+# Add some new variables to the dataset
+# extracting the date and the matchup information from the matchup variable
 Matchup <- data.frame(str_split_fixed(df$matchup," ", n =7)) %>% 
   select(X1,X2,X3,X7) %>% 
   rename(Day = X2,
@@ -36,22 +36,22 @@ Matchup <- data.frame(str_split_fixed(df$matchup," ", n =7)) %>%
 df <- cbind(df,Matchup)
 df$date <- paste(df$Year, df$Month, df$Day, sep="-") %>% ymd() %>% as.Date()
 
-# creating a variable to determine if the game is in the final 5 minutes
+# creating a variable to determine if the shot is taken in the final 5 minutes
 df <- df %>% 
   mutate(last_5 = if_else(period == 4 & minutes_remaining < 5, 1,0)) 
 # a variable to represent if the game goes to overtime
 df <- df %>% 
   mutate(Overtime = if_else(period == 5 | period == 6 | period == 7, 1, 0)) 
-# binning the close close_def_dist into 5 bins to simplyfy and group the continous variable
+# binning the close close_def_dist into 5 bins to simplyfy and group into a continous variable
 df$close_def_dist_simple <- cut_number(df$close_def_dist,n = 5)
 
-# creating some variables based on teh game by summarising player stats into the one observation
+# creating some variables based on the game by summarising player stats into the one observation
 ind_game <- df %>% 
   group_by(team_id,date, Opposition) %>% 
   arrange(team_id,date) %>% 
   summarise(across(c(w),~max(.x, na.rm = TRUE))) %>% 
   ungroup()
-# creating varaibles related to win form and total wins
+# creating variables related to win form and total wins
 ind_game <- ind_game %>% 
   group_by(team_id) %>% 
   mutate(W_last = if_else(lag(w) == "W",1,0),
@@ -63,13 +63,14 @@ ind_game <- ind_game %>%
          streak = if_else(is.na(streak), replace_na(as.integer(0)), streak)) %>% 
   ungroup() %>% 
     mutate_at(vars(W_last,win), as.factor)
-# bindning the individual game features back to the player dataset
+# binding the individual game features back to the player dataset
 df <- left_join(df,ind_game, by = c("team_id","date","Opposition",'w')) 
 
 
 # through some later exploration I found these observations that gave 4 or 6 points. I thought the 4 points could be getting fouled on a three point
-## attempt but after checking box scores that did not seem to be the case. 
-# I am not sure if these are errors in the dataset or there is some explanation I can't find. # As they relate to only two players I am inclined to think it is an error in the data
+## attempt but after checking box scores online that did not seem to be the case. 
+# I am not sure if these are errors in the dataset or there is some explanation I can't find. 
+# As they relate to only two players I am inclined to think it is an error in the data but as i cant be sure I decided to leave it in the data
 df %>% 
   select(pts,pts_type) %>% 
   mutate(diff = pts_type - pts) %>% 
@@ -78,9 +79,9 @@ df %>%
   filter(pts== 4 | pts ==6)
 
 
-# removing variables that either will have too much of an impact on modelling 
-# i.e. if pts is left in it directly correlates to made and missed and the models will only use that data
-# the other variables have far too many unique observations to assist with modelling 
+# removing variables that either will have too much of an impact on modelling (i.e. if pts is left 
+## in it directly correlates to made and missed and the models will only use that data), have too many unique observations to assist with modelling 
+### or are clearly better represented by other variables
 df <- df %>% 
   select(-c(closest_defender,
          player_name,
@@ -103,7 +104,7 @@ sum(is.na(df))
 gg_miss_var(df)
 vars_with_NA <- miss_var_which(df)
 
-# the majority of these NA values seem to appear when theer is less than 24 seconds left in the period.
+# the majority of these NA values seem to appear when their is less than 24 seconds left in the period.
 # due to think I belive they are due to the shot clock being "turned off" so have replaced the NA value with the seconds remaning value.
 df %>% 
   select(c(vars_with_NA, seconds_remaining)) %>% 
@@ -155,7 +156,7 @@ rm(inTrain)
 ```
 
 ```{r NA's, include=FALSE}
-# imputing the mean of the period into the NA values and cloning the data frame
+# imputing the mean of the period into the NA values and cloneing the data frame
 SC_mean_by_period <- training %>% 
   group_by(period) %>%
   mutate(clock = if_else(is.na(shot_clock), mean(shot_clock, na.rm = T), shot_clock)) 
@@ -239,9 +240,9 @@ training <- training %>%
   mutate(period_FG = (sum(shot_result == 'made')) / (sum(shot_result == 'made') + sum(shot_result == "missed"))) %>% 
   ungroup()
 
-# I did not want to calculted the FG% using the training data as I thought that would affect
+# I did not want to calculte the FG% using values from the training data as I thought that would affect
 ## the out of sample testing
-# So i calcaulted the amounts based on the training data, saved that as a variable and 
+# So i calculated the amounts based on the training data, saved that as a variable and 
 ## joined it to the testing data
 action_FG <- training %>% 
   group_by(action_type) %>% 
@@ -334,7 +335,7 @@ training %>%
   mutate(Percet_obs = n/ (length(training$action_type))) %>% 
   arrange(-n)
 # as action_type informs action_type_FG I decided to remove action_type to improve processing
-## time as less dummy values are created and therefore less total featires
+## time as less dummy values are created and therefore less total variables
 training <-  training %>% 
   select(-action_type)
 
@@ -342,7 +343,7 @@ training <-  training %>%
 
 
 ```{r Boxplot, include=FALSE}
-# Thes variables do not seem to have a clear affect on make or miss
+# These variables do not seem to have a clear affect on make or miss
 training <- training %>% 
   select(-Year)
 ```
@@ -425,6 +426,7 @@ training <- training %>%
 ```{r Cross validation, include=FALSE}
 # establshing a control_obj for modelling
 # the repeatedcv was used to attain the figures listed but took a significant amount of time and did not significantly improve the result
+# So most interations were done using standard cross validation with 10 folds
 control_obj <- trainControl(
   method = "repeatedcv",
   number = 10,
@@ -453,8 +455,8 @@ mdl_logreg <- train(shot_result~.,
                     method = "glm",
                     family = 'binomial',
                     trControl = control_obj)
-summary(mdl_logreg)
-# The logistic regression model returned the values ROC:0.69 Sens:0.44 Spec:0.92
+mdl_logreg
+# The logistic regression model returned the values ROC:0.69 Sens:0.45 Spec:0.82
 # as the sensitivty is 0.44 we can assume the model will be poor at predicting made shots
 # the higher spec value shows the model is better an predicting a missed shot
 ```
@@ -501,7 +503,7 @@ confusionMatrix(data = tree_mdl,
                 reference = training$shot_result,
                 positive = "made")
 
-# accuracy on the testing set is 65%, clearly the model is better at predicting missed shows as opposed to made shots
+# accuracy on the testing set is 66%, clearly the model is better at predicting missed shows as opposed to made shots
 # with the model incorrectly predicting more made as missed than correctly predicting made as made
 ```
 
