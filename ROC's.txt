@@ -1,0 +1,46 @@
+Including FG's and action type
+Tree, rf, log
+ROC: 0.65,0.68,0.69
+Sens: 0.48,0.49,0.44
+Spec: 0.79,0.75,0.82
+
+Including FG and not action type
+Tree, rf, log
+ROC: 0.65,0.68,0.69
+Sens: 0.48,0.50,0.43
+Spec: 0.79,0.75,0.83
+
+Including FG and not action type repeated cv 10:5
+ROC: 0.65,0.67,0.69
+Sens: 0.48,0.49,0.43
+Spec: 0.78,0.74,0.83
+
+Including neither
+Tree, rf, log
+ROC: 0.61,0.62,0.64
+Sens: 0.36,0.42,0.43
+Spec: 0.84,0.71,0.76
+
+action_FG, loc_y, shot_zone_basic, touch_time, close_def_dist, shot_clock
+Tree, rf, log
+ROC: 0.65,0.67,0.68
+Sens: 0.48,0.40,0.43
+Spec: 0.79,0.83,0.82
+
+change tree_mdl tuneGrid = expand.grid(cp = seq(0.01,0.1,0.01)) to (0.001,0.02,0.001)
+Tree, rf, log
+ROC: 0.65,0.677,0.699
+Sens: 0.46,0.49,0.43
+Spec: 0.81,0.74,0.82
+
+Without close_def_dist_simple,shot_zone_basic,FG_2pt_3pt and (0.001,0.2,0.001)
+Tree, rf, log
+ROC: 0.65,0.67,0.69
+Sens: 0.46,0.47,0.44
+Spec: 0.81,0.75,0.82
+
+Run full training dataset on rf
+Tree, rf, log
+ROC: 0.65,0.71,0.69
+Sens: 0.46,0.50,0.44
+Spec: 0.82,0.80,0.82

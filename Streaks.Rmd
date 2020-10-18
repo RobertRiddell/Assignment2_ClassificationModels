@@ -1,0 +1,61 @@
+---
+title: "Untitled"
+author: "Robert Riddell"
+date: "16/10/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(readr)
+library(tidyverse)
+library(stringr)
+library(lubridate)
+
+```
+
+```{r}
+df <- read_csv(file.choose())
+```
+
+```{r}
+glimpse(df)
+
+
+Matchup <- data.frame(str_split_fixed(df$matchup, " ", n = 7)) %>% 
+  select(X1,X2,X3,X7) %>% 
+  rename(Day = X2,
+         Month = X1,
+         Year = X3,
+         Opposition = X7)
+df <- cbind(df,Matchup)
+```
+
+
+```{r}
+df$date <- paste(df$Year, df$Month, df$Day, sep="-") %>% ymd() %>% as.Date()
+
+ind_game <- df %>% 
+  group_by(team_id,date, Opposition) %>% 
+  arrange(team_id,date) %>% 
+  summarise(across(c(w),~max(.x, na.rm = TRUE))) %>% 
+  ungroup()
+
+ind_game <- ind_game %>% 
+  group_by(team_id) %>% 
+  mutate(W_last = if_else(lag(w) == "W",1,0),
+         W_last = if_else(is.na(W_last),replace_na(2), W_last),
+         win = if_else(w == "W", 1, 0),
+         total_wins = if_else(w == "W", cumsum(win) - 1, cumsum(win)),
+         streak = if_else(w == 'W', sequence(rle(win)$lengths), as.integer(0)),
+         streak = lag(streak),
+         streak = if_else(is.na(streak), replace_na(as.integer(0)), streak)) %>% 
+  ungroup() %>% 
+    mutate_at(vars(W_last,win,total_wins,streak), as.factor)
+
+
+         
+df <- left_join(df,ind_game, by = c("team_id","date","Opposition",'w')) 
+
+```
+
